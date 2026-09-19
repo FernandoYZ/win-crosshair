@@ -2,10 +2,11 @@
 
 A minimal crosshair overlay for Windows, written in C with the Win32 API and GDI.
 
-**Status: v0.4.0 (visual quality).** It draws a configurable cross, with an
+**Status: v0.5.0 (robustness).** It draws a configurable cross, with an
 optional outline, in the center of the selected monitor. The window is topmost,
-click-through, never takes focus, is hidden from Alt+Tab and is DPI-aware. See
-`docs/ROADMAP.md` for what comes next.
+click-through, never takes focus, is hidden from Alt+Tab and is DPI-aware. It
+recenters itself when the desktop layout changes, and works from folders with any
+characters in their name. See `docs/ROADMAP.md` for what comes next.
 
 ## Build
 
@@ -97,6 +98,28 @@ placed in the wrong section, and `#RRGGBBAA` colors (use `#RRGGBB` plus
 
 Odd thicknesses cannot be centered exactly on the pixel grid, so the arms sit
 half a pixel off-center.
+
+### Desktop changes
+
+When the resolution changes (for example when a game switches modes) or a monitor
+is plugged in or removed, Windows sends `WM_DISPLAYCHANGE` and the crosshair
+recenters on the configured monitor, or on the primary one if that monitor is gone.
+It reacts to the event; nothing polls.
+
+## Compatibility
+
+What has actually been checked, so nothing here is a guess:
+
+| Area | Checked | Not checked yet |
+|---|---|---|
+| Windows | Windows 11 | Windows 10 |
+| Resolution | 1920x1080 | 1280x720, 2560x1440, 3840x2160 |
+| DPI scaling | 125 % (window size and centering exact in physical pixels) | 100 %, 150 %, 175 %, 200 % |
+| Monitors | one monitor; a missing monitor falls back to the primary | two or three monitors |
+| Game window mode | Windowed / borderless (L4D2) shows the crosshair | - |
+| Fullscreen exclusive | does not show it (documented limitation) | - |
+| Non-ANSI folder names | works (tested with a Cyrillic folder) | - |
+| Recentering | simulated by sending `WM_DISPLAYCHANGE` after moving the window | a real resolution change |
 
 ## Tests
 
