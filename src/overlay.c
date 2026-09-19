@@ -1,16 +1,7 @@
 #include "overlay.h"
 
-/* Every value is hardcoded until configuration arrives in v0.3.0. */
-#define CROSS_COLOR RGB(0, 255, 0)
-#define CROSS_SIZE 12
-#define CROSS_THICKNESS 2
-#define CROSS_GAP 4
-
-/* Pixels painted with this color become transparent (LWA_COLORKEY). */
-#define KEY_COLOR RGB(255, 0, 255)
-
 /* Extended styles that make this a real overlay:
- *   LAYERED     per-pixel transparency (color key)
+ *   LAYERED     per-pixel transparency (color key) and window opacity
  *   TRANSPARENT mouse input passes through to the window underneath
  *   NOACTIVATE  never takes focus or becomes the active window
  *   TOOLWINDOW  hidden from Alt+Tab and the taskbar
@@ -18,11 +9,20 @@
 #define OVERLAY_EX_STYLE \
     (WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST)
 
-/* The window is only as big as the crosshair, not the whole screen. */
-#define HALF_EXTENT (CROSS_GAP + CROSS_SIZE)
-#define WINDOW_SIDE (2 * HALF_EXTENT)
-
 static const char CLASS_NAME[] = "crosshair_overlay";
+
+/* State of the single overlay window, set once by overlay_create(). */
+static Config g_cfg;
+static COLORREF g_cross_color;
+static COLORREF g_key_color; /* pixels of this color become transparent */
+static int g_side;           /* window width and height, in pixels */
+
+/* The key color must differ from the crosshair color, or the crosshair
+ * itself would turn transparent. */
+static COLORREF pick_key_color(COLORREF cross)
+{
+    return cross == RGB(255, 0, 255) ? RGB(0, 255, 255) : RGB(255, 0, 255);
+}
 
 static void fill_rect(HDC dc, HBRUSH brush, int left, int top, int right, int bottom)
 {
@@ -34,21 +34,23 @@ static void paint(HWND hwnd)
 {
     PAINTSTRUCT ps;
     HDC dc = BeginPaint(hwnd, &ps);
-    HBRUSH key = CreateSolidBrush(KEY_COLOR);
-    HBRUSH cross = CreateSolidBrush(CROSS_COLOR);
+    HBRUSH key = CreateSolidBrush(g_key_color);
+    HBRUSH cross = CreateSolidBrush(g_cross_color);
 
-    const int c = HALF_EXTENT;
-    const int t0 = c - CROSS_THICKNESS / 2;
-    const int t1 = t0 + CROSS_THICKNESS;
+    const int c = g_side / 2;
+    const int t0 = c - g_cfg.thickness / 2;
+    const int t1 = t0 + g_cfg.thickness;
+    const int gap_lo = c - g_cfg.gap; /* inner end of the top/left arms */
+    const int gap_hi = c + g_cfg.gap; /* inner end of the bottom/right arms */
 
-    fill_rect(dc, key, 0, 0, WINDOW_SIDE, WINDOW_SIDE);
+    fill_rect(dc, key, 0, 0, g_side, g_side);
 
     /* horizontal arms */
-    fill_rect(dc, cross, c - CROSS_GAP - CROSS_SIZE, t0, c - CROSS_GAP, t1);
-    fill_rect(dc, cross, c + CROSS_GAP, t0, c + CROSS_GAP + CROSS_SIZE, t1);
+    fill_rect(dc, cross, gap_lo - g_cfg.size, t0, gap_lo, t1);
+    fill_rect(dc, cross, gap_hi, t0, gap_hi + g_cfg.size, t1);
     /* vertical arms */
-    fill_rect(dc, cross, t0, c - CROSS_GAP - CROSS_SIZE, t1, c - CROSS_GAP);
-    fill_rect(dc, cross, t0, c + CROSS_GAP, t1, c + CROSS_GAP + CROSS_SIZE);
+    fill_rect(dc, cross, t0, gap_lo - g_cfg.size, t1, gap_lo);
+    fill_rect(dc, cross, t0, gap_hi, t1, gap_hi + g_cfg.size);
 
     DeleteObject(cross);
     DeleteObject(key);
@@ -70,8 +72,14 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
     return DefWindowProc(hwnd, msg, wparam, lparam);
 }
 
-BOOL overlay_create(HINSTANCE instance)
+BOOL overlay_create(HINSTANCE instance, const Config *cfg)
 {
+    g_cfg = *cfg;
+    g_cross_color = RGB(cfg->r, cfg->g, cfg->b);
+    g_key_color = pick_key_color(g_cross_color);
+    /* The window is only as big as the crosshair, not the whole screen. */
+    g_side = 2 * (cfg->gap + cfg->size);
+
     WNDCLASS wc = { 0 };
     wc.lpfnWndProc = window_proc;
     wc.hInstance = instance;
@@ -81,17 +89,18 @@ BOOL overlay_create(HINSTANCE instance)
         return FALSE;
     }
 
-    int x = (GetSystemMetrics(SM_CXSCREEN) - WINDOW_SIDE) / 2;
-    int y = (GetSystemMetrics(SM_CYSCREEN) - WINDOW_SIDE) / 2;
+    int x = (GetSystemMetrics(SM_CXSCREEN) - g_side) / 2;
+    int y = (GetSystemMetrics(SM_CYSCREEN) - g_side) / 2;
 
     HWND hwnd = CreateWindowEx(OVERLAY_EX_STYLE, CLASS_NAME, "crosshair", WS_POPUP,
-                               x, y, WINDOW_SIDE, WINDOW_SIDE,
+                               x, y, g_side, g_side,
                                NULL, NULL, instance, NULL);
     if (hwnd == NULL) {
         return FALSE;
     }
 
-    if (!SetLayeredWindowAttributes(hwnd, KEY_COLOR, 0, LWA_COLORKEY)) {
+    if (!SetLayeredWindowAttributes(hwnd, g_key_color, (BYTE)cfg->opacity,
+                                    LWA_COLORKEY | LWA_ALPHA)) {
         DestroyWindow(hwnd);
         return FALSE;
     }

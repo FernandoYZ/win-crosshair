@@ -1,0 +1,8 @@
+# crosshair configuration. Edit, save and restart crosshair.exe.
+
+[crosshair]
+color = "#00FF00"  # "#RRGGBB"
+size = 12          # length of each arm in pixels (1-500)
+thickness = 2      # arm thickness in pixels (1-100)
+gap = 4            # distance from the center to each arm (0-500)
+opacity = 255      # 0 (invisible) to 255 (opaque)
