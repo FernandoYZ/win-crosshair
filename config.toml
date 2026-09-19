@@ -1,8 +1,15 @@
 # crosshair configuration. Edit, save and restart crosshair.exe.
 
 [crosshair]
-color = "#00FF00"  # "#RRGGBB"
-size = 12          # length of each arm in pixels (1-500)
-thickness = 2      # arm thickness in pixels (1-100)
-gap = 4            # distance from the center to each arm (0-500)
-opacity = 255      # 0 (invisible) to 255 (opaque)
+color = "#00FF00"          # "#RRGGBB"
+size = 12                  # length of each arm in pixels (1-500)
+thickness = 2              # arm thickness in pixels (1-100)
+gap = 4                    # distance from the center to each arm (0-500)
+opacity = 255              # 0 (invisible) to 255 (opaque)
+
+outline = true             # true or false
+outline_color = "#000000"  # "#RRGGBB"
+outline_thickness = 1      # extra pixels around every arm (0-50)
+
+[display]
+monitor = 0                # 0 = primary, 1 = second monitor, 2 = third...

@@ -9,27 +9,40 @@
 
 #define MAX_FILE_SIZE 4096
 
-/* Integer properties of [crosshair] and their accepted range. */
+typedef enum { FIELD_INT, FIELD_BOOL, FIELD_COLOR } FieldType;
+
+/* Every supported property. `lo`/`hi` only apply to integers. */
 static const struct {
+    const char *section;
     const char *key;
+    FieldType type;
     size_t offset;
     int lo, hi;
-} INT_FIELDS[] = {
-    { "size",      offsetof(Config, size),      1, 500 },
-    { "thickness", offsetof(Config, thickness), 1, 100 },
-    { "gap",       offsetof(Config, gap),       0, 500 },
-    { "opacity",   offsetof(Config, opacity),   0, 255 },
+} FIELDS[] = {
+    { "crosshair", "color",             FIELD_COLOR, offsetof(Config, color),             0,   0 },
+    { "crosshair", "size",              FIELD_INT,   offsetof(Config, size),              1, 500 },
+    { "crosshair", "thickness",         FIELD_INT,   offsetof(Config, thickness),         1, 100 },
+    { "crosshair", "gap",               FIELD_INT,   offsetof(Config, gap),               0, 500 },
+    { "crosshair", "opacity",           FIELD_INT,   offsetof(Config, opacity),           0, 255 },
+    { "crosshair", "outline",           FIELD_BOOL,  offsetof(Config, outline),           0,   0 },
+    { "crosshair", "outline_color",     FIELD_COLOR, offsetof(Config, outline_color),     0,   0 },
+    { "crosshair", "outline_thickness", FIELD_INT,   offsetof(Config, outline_thickness), 0,  50 },
+    { "display",   "monitor",           FIELD_INT,   offsetof(Config, monitor),           0, 255 },
 };
+
+#define FIELD_COUNT (sizeof FIELDS / sizeof FIELDS[0])
 
 void config_defaults(Config *cfg)
 {
-    cfg->r = 0;
-    cfg->g = 255;
-    cfg->b = 0;
+    cfg->color = (Rgb){ 0, 255, 0 };
     cfg->size = 12;
     cfg->thickness = 2;
     cfg->gap = 4;
     cfg->opacity = 255;
+    cfg->outline = true;
+    cfg->outline_color = (Rgb){ 0, 0, 0 };
+    cfg->outline_thickness = 1;
+    cfg->monitor = 0;
 }
 
 /* Always returns false so callers can write `return fail(...)`.
@@ -119,17 +132,17 @@ static int hex_value(char c)
     return -1;
 }
 
-static bool parse_color(char *value, Config *cfg, char *err, size_t err_size, int line)
+static bool parse_color(char *value, const char *key, Rgb *out, char *err, size_t err_size, int line)
 {
     char *s = unquote(value);
     if (!s) {
         return fail(err, err_size, line,
-                    "invalid value for 'color': expected a quoted string like \"#RRGGBB\".");
+                    "invalid value for '%s': expected a quoted string like \"#RRGGBB\".", key);
     }
     if (s[0] == '#' && strlen(s) == 9) {
         return fail(err, err_size, line,
-                    "invalid value for 'color': #RRGGBBAA is not supported, "
-                    "use \"#RRGGBB\" and the 'opacity' property.");
+                    "invalid value for '%s': #RRGGBBAA is not supported, "
+                    "use \"#RRGGBB\" and the 'opacity' property.", key);
     }
 
     int d[6];
@@ -140,41 +153,67 @@ static bool parse_color(char *value, Config *cfg, char *err, size_t err_size, in
     }
     if (!ok) {
         return fail(err, err_size, line,
-                    "invalid value for 'color': expected the format \"#RRGGBB\".");
+                    "invalid value for '%s': expected the format \"#RRGGBB\".", key);
     }
 
-    cfg->r = (unsigned char)(d[0] * 16 + d[1]);
-    cfg->g = (unsigned char)(d[2] * 16 + d[3]);
-    cfg->b = (unsigned char)(d[4] * 16 + d[5]);
+    out->r = (unsigned char)(d[0] * 16 + d[1]);
+    out->g = (unsigned char)(d[2] * 16 + d[3]);
+    out->b = (unsigned char)(d[4] * 16 + d[5]);
     return true;
 }
 
-static bool apply(Config *cfg, const char *key, char *value, char *err, size_t err_size, int line)
+/* Returns the canonical section name from FIELDS, or NULL if unknown. */
+static const char *find_section(const char *name)
 {
-    if (strcmp(key, "color") == 0) {
-        return parse_color(value, cfg, err, err_size, line);
+    for (size_t i = 0; i < FIELD_COUNT; i++) {
+        if (strcmp(FIELDS[i].section, name) == 0) {
+            return FIELDS[i].section;
+        }
     }
+    return NULL;
+}
 
-    for (size_t i = 0; i < sizeof INT_FIELDS / sizeof INT_FIELDS[0]; i++) {
-        if (strcmp(key, INT_FIELDS[i].key) != 0) {
+static bool apply(Config *cfg, const char *section, const char *key, char *value,
+                  char *err, size_t err_size, int line)
+{
+    for (size_t i = 0; i < FIELD_COUNT; i++) {
+        if (strcmp(FIELDS[i].section, section) != 0 || strcmp(FIELDS[i].key, key) != 0) {
             continue;
         }
-        int v;
-        if (!parse_int(value, INT_FIELDS[i].lo, INT_FIELDS[i].hi, &v)) {
-            return fail(err, err_size, line,
-                        "invalid value for '%s': expected an integer between %d and %d.",
-                        key, INT_FIELDS[i].lo, INT_FIELDS[i].hi);
+
+        char *dest = (char *)cfg + FIELDS[i].offset;
+        switch (FIELDS[i].type) {
+        case FIELD_COLOR:
+            return parse_color(value, key, (Rgb *)dest, err, err_size, line);
+        case FIELD_BOOL:
+            if (strcmp(value, "true") == 0) {
+                *(bool *)dest = true;
+            } else if (strcmp(value, "false") == 0) {
+                *(bool *)dest = false;
+            } else {
+                return fail(err, err_size, line,
+                            "invalid value for '%s': expected true or false.", key);
+            }
+            return true;
+        case FIELD_INT: {
+            int v;
+            if (!parse_int(value, FIELDS[i].lo, FIELDS[i].hi, &v)) {
+                return fail(err, err_size, line,
+                            "invalid value for '%s': expected an integer between %d and %d.",
+                            key, FIELDS[i].lo, FIELDS[i].hi);
+            }
+            *(int *)dest = v;
+            return true;
         }
-        *(int *)((char *)cfg + INT_FIELDS[i].offset) = v;
-        return true;
+        }
     }
 
-    return fail(err, err_size, line, "unknown property '%s'.", key);
+    return fail(err, err_size, line, "unknown property '%s' in [%s].", key, section);
 }
 
 bool config_parse(char *text, Config *cfg, char *err, size_t err_size)
 {
-    bool in_crosshair = false;
+    const char *section = NULL;
     int line_no = 0;
     char *next = text;
 
@@ -202,10 +241,10 @@ bool config_parse(char *text, Config *cfg, char *err, size_t err_size)
             }
             line[len - 1] = '\0';
             char *name = trim(line + 1);
-            if (strcmp(name, "crosshair") != 0) {
+            section = find_section(name);
+            if (!section) {
                 return fail(err, err_size, line_no, "unknown section '[%s]'.", name);
             }
-            in_crosshair = true;
             continue;
         }
 
@@ -222,11 +261,11 @@ bool config_parse(char *text, Config *cfg, char *err, size_t err_size)
         if (*value == '\0') {
             return fail(err, err_size, line_no, "missing value for '%s'.", key);
         }
-        if (!in_crosshair) {
+        if (!section) {
             return fail(err, err_size, line_no,
-                        "property '%s' must be inside a [crosshair] section.", key);
+                        "property '%s' must be inside a section such as [crosshair].", key);
         }
-        if (!apply(cfg, key, value, err, err_size, line_no)) {
+        if (!apply(cfg, section, key, value, err, err_size, line_no)) {
             return false;
         }
     }

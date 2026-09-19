@@ -6,10 +6,21 @@
 
 typedef struct {
     unsigned char r, g, b;
+} Rgb;
+
+typedef struct {
+    /* [crosshair] */
+    Rgb color;
     int size;      /* length of each arm, in pixels */
     int thickness; /* arm thickness, in pixels */
     int gap;       /* distance from the center to the start of each arm */
     int opacity;   /* 0 (invisible) to 255 (opaque) */
+    bool outline;
+    Rgb outline_color;
+    int outline_thickness; /* extra pixels around every arm */
+
+    /* [display] */
+    int monitor; /* 0 = primary, 1.. = the other monitors */
 } Config;
 
 void config_defaults(Config *cfg);

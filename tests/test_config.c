@@ -39,8 +39,12 @@ static void test_defaults(void)
 {
     Config cfg;
     config_defaults(&cfg);
-    CHECK(cfg.r == 0 && cfg.g == 255 && cfg.b == 0);
+    CHECK(cfg.color.r == 0 && cfg.color.g == 255 && cfg.color.b == 0);
     CHECK(cfg.size == 12 && cfg.thickness == 2 && cfg.gap == 4 && cfg.opacity == 255);
+    CHECK(cfg.outline);
+    CHECK(cfg.outline_color.r == 0 && cfg.outline_color.g == 0 && cfg.outline_color.b == 0);
+    CHECK(cfg.outline_thickness == 1);
+    CHECK(cfg.monitor == 0);
 }
 
 static void test_missing_file_uses_defaults(void)
@@ -48,7 +52,7 @@ static void test_missing_file_uses_defaults(void)
     Config cfg;
     char err[256];
     CHECK(config_load("this-file-does-not-exist.toml", &cfg, err, sizeof err));
-    CHECK(cfg.size == 12 && cfg.g == 255);
+    CHECK(cfg.size == 12 && cfg.color.g == 255 && cfg.outline && cfg.monitor == 0);
 }
 
 static void test_valid(void)
@@ -62,10 +66,20 @@ static void test_valid(void)
         "size = 20\r\n"
         "  thickness=3\r\n"
         "gap = 0\r\n"
-        "opacity = 128\r\n";
+        "opacity = 128\r\n"
+        "outline = false\r\n"
+        "outline_color = \"#0000FF\"\r\n"
+        "outline_thickness = 0\r\n"
+        "\r\n"
+        "[display]\r\n"
+        "monitor = 2\r\n";
     CHECK(parse(src, &cfg, err, sizeof err));
-    CHECK(cfg.r == 255 && cfg.g == 128 && cfg.b == 0);
+    CHECK(cfg.color.r == 255 && cfg.color.g == 128 && cfg.color.b == 0);
     CHECK(cfg.size == 20 && cfg.thickness == 3 && cfg.gap == 0 && cfg.opacity == 128);
+    CHECK(!cfg.outline);
+    CHECK(cfg.outline_color.r == 0 && cfg.outline_color.g == 0 && cfg.outline_color.b == 255);
+    CHECK(cfg.outline_thickness == 0);
+    CHECK(cfg.monitor == 2);
 }
 
 static void test_partial_keeps_defaults(void)
@@ -74,6 +88,15 @@ static void test_partial_keeps_defaults(void)
     char err[256];
     CHECK(parse("[crosshair]\nsize = 30\n", &cfg, err, sizeof err));
     CHECK(cfg.size == 30 && cfg.thickness == 2 && cfg.opacity == 255);
+    CHECK(cfg.outline && cfg.outline_thickness == 1 && cfg.monitor == 0);
+}
+
+static void test_sections_any_order(void)
+{
+    Config cfg;
+    char err[256];
+    CHECK(parse("[display]\nmonitor = 1\n[crosshair]\nsize = 9\n", &cfg, err, sizeof err));
+    CHECK(cfg.monitor == 1 && cfg.size == 9);
 }
 
 static void test_bom_file(void)
@@ -91,7 +114,7 @@ static void test_bom_file(void)
     remove(path);
 }
 
-static void test_invalid(void)
+static void test_invalid_values(void)
 {
     expect_error("[crosshair]\ncolor = \"green\"\n", "'color'");
     expect_error("[crosshair]\ncolor = #00FF00\n", "'color'");
@@ -110,15 +133,32 @@ static void test_invalid(void)
     expect_error("[crosshair]\nopacity = -1\n", "'opacity'");
 }
 
+static void test_invalid_outline_and_display(void)
+{
+    expect_error("[crosshair]\noutline = yes\n", "'outline'");
+    expect_error("[crosshair]\noutline = 1\n", "'outline'");
+    expect_error("[crosshair]\noutline = \"true\"\n", "'outline'");
+    expect_error("[crosshair]\noutline = True\n", "'outline'");
+    expect_error("[crosshair]\noutline_color = \"red\"\n", "'outline_color'");
+    expect_error("[crosshair]\noutline_color = \"#00FF00CC\"\n", "#RRGGBBAA");
+    expect_error("[crosshair]\noutline_thickness = -1\n", "'outline_thickness'");
+    expect_error("[crosshair]\noutline_thickness = 51\n", "'outline_thickness'");
+    expect_error("[display]\nmonitor = -1\n", "'monitor'");
+    expect_error("[display]\nmonitor = 256\n", "'monitor'");
+    expect_error("[display]\nmonitor = \"primary\"\n", "'monitor'");
+}
+
 static void test_structure_errors(void)
 {
     expect_error("[crosshair]\nshape = \"cross\"\n", "unknown property 'shape'");
-    expect_error("[display]\nmonitor = 0\n", "unknown section");
-    expect_error("size = 12\n", "[crosshair] section");
+    expect_error("[audio]\nvolume = 1\n", "unknown section");
+    expect_error("size = 12\n", "inside a section");
     expect_error("[crosshair\nsize = 12\n", "malformed section");
     expect_error("[crosshair]\nsize\n", "key = value");
     expect_error("[crosshair]\nsize =\n", "missing value for 'size'");
     expect_error("[crosshair]\n= 12\n", "key = value");
+    expect_error("[crosshair]\nmonitor = 1\n", "unknown property 'monitor' in [crosshair]");
+    expect_error("[display]\nsize = 12\n", "unknown property 'size' in [display]");
     expect_error("[crosshair]\nsize = 12\nthickness = 1000\n", "'thickness'");
     expect_error("[crosshair]\nsize = 1\ngap = 0\nthickness = 5\n", "clipped");
 }
@@ -126,6 +166,7 @@ static void test_structure_errors(void)
 static void test_error_reports_line(void)
 {
     expect_error("[crosshair]\n\n# note\nsize = 0\n", "line 4");
+    expect_error("[crosshair]\nsize = 5\n[display]\nmonitor = x\n", "line 4");
 }
 
 int main(void)
@@ -134,8 +175,10 @@ int main(void)
     test_missing_file_uses_defaults();
     test_valid();
     test_partial_keeps_defaults();
+    test_sections_any_order();
     test_bom_file();
-    test_invalid();
+    test_invalid_values();
+    test_invalid_outline_and_display();
     test_structure_errors();
     test_error_reports_line();
 
