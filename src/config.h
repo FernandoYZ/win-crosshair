@@ -33,4 +33,12 @@ bool config_parse(char *text, Config *cfg, char *err, size_t err_size);
 /* Loads `path` into `cfg`. A missing file is not an error: defaults are used. */
 bool config_load(const char *path, Config *cfg, char *err, size_t err_size);
 
+#ifdef _WIN32
+#include <wchar.h>
+
+/* Same as config_load() for a UTF-16 path. Use this on Windows: a narrow path
+ * cannot name folders with characters outside the ANSI code page. */
+bool config_load_w(const wchar_t *path, Config *cfg, char *err, size_t err_size);
+#endif
+
 #endif

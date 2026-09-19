@@ -278,18 +278,9 @@ bool config_parse(char *text, Config *cfg, char *err, size_t err_size)
     return true;
 }
 
-bool config_load(const char *path, Config *cfg, char *err, size_t err_size)
+/* Reads and parses an already open config file, then closes it. */
+static bool read_config(FILE *f, Config *cfg, char *err, size_t err_size)
 {
-    config_defaults(cfg);
-
-    FILE *f = fopen(path, "rb");
-    if (!f) {
-        if (errno == ENOENT) {
-            return true;
-        }
-        return fail(err, err_size, 0, "cannot open file: %s.", strerror(errno));
-    }
-
     char buf[MAX_FILE_SIZE + 1];
     size_t n = fread(buf, 1, sizeof buf, f);
     bool read_failed = ferror(f) != 0;
@@ -309,3 +300,37 @@ bool config_load(const char *path, Config *cfg, char *err, size_t err_size)
     }
     return config_parse(text, cfg, err, err_size);
 }
+
+/* Called right after a failed open, while errno still describes the failure.
+ * A missing file is fine: the defaults stay in place. */
+static bool open_failed(char *err, size_t err_size)
+{
+    if (errno == ENOENT) {
+        return true;
+    }
+    return fail(err, err_size, 0, "cannot open file: %s.", strerror(errno));
+}
+
+bool config_load(const char *path, Config *cfg, char *err, size_t err_size)
+{
+    config_defaults(cfg);
+
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return open_failed(err, err_size);
+    }
+    return read_config(f, cfg, err, err_size);
+}
+
+#ifdef _WIN32
+bool config_load_w(const wchar_t *path, Config *cfg, char *err, size_t err_size)
+{
+    config_defaults(cfg);
+
+    FILE *f = _wfopen(path, L"rb");
+    if (!f) {
+        return open_failed(err, err_size);
+    }
+    return read_config(f, cfg, err, err_size);
+}
+#endif

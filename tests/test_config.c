@@ -169,6 +169,83 @@ static void test_error_reports_line(void)
     expect_error("[crosshair]\nsize = 5\n[display]\nmonitor = x\n", "line 4");
 }
 
+static void test_degenerate_input(void)
+{
+    Config cfg;
+    char err[256];
+
+    CHECK(parse("", &cfg, err, sizeof err));
+    CHECK(cfg.size == 12 && cfg.monitor == 0);
+    CHECK(parse("\n\n   \n", &cfg, err, sizeof err));
+    CHECK(parse("# only a comment", &cfg, err, sizeof err));
+    CHECK(parse("[crosshair]", &cfg, err, sizeof err)); /* no trailing newline */
+    CHECK(parse("[crosshair]\nsize = 8", &cfg, err, sizeof err) && cfg.size == 8);
+    CHECK(parse("[crosshair]\nsize = 8\nsize = 9\n", &cfg, err, sizeof err) && cfg.size == 9);
+
+    /* A very long line must be rejected cleanly, not overflow anything. */
+    char big[1024];
+    memcpy(big, "[crosshair]\n", 12);
+    memset(big + 12, 'a', 900);
+    memcpy(big + 12 + 900, " = 1\n", 6);
+    expect_error(big, "unknown property");
+}
+
+/* Writes a config file of exactly `total` bytes: a valid header padded with a comment. */
+static bool write_sized_file(const char *path, size_t total)
+{
+    static char buf[8192];
+    const char header[] = "[crosshair]\nsize = 5\n#";
+    size_t hlen = sizeof header - 1;
+    if (total < hlen || total > sizeof buf) return false;
+    memcpy(buf, header, hlen);
+    memset(buf + hlen, 'x', total - hlen);
+
+    FILE *f = fopen(path, "wb");
+    if (!f) return false;
+    size_t written = fwrite(buf, 1, total, f);
+    fclose(f);
+    return written == total;
+}
+
+static void test_file_size_limit(void)
+{
+    const char *path = "test_config_size.tmp";
+    Config cfg;
+    char err[256];
+
+    CHECK(write_sized_file(path, 4096));
+    CHECK(config_load(path, &cfg, err, sizeof err) && cfg.size == 5);
+
+    CHECK(write_sized_file(path, 4097));
+    CHECK(!config_load(path, &cfg, err, sizeof err));
+    CHECK(strstr(err, "larger than") != NULL);
+    remove(path);
+}
+
+#ifdef _WIN32
+/* Folder and file names outside the ANSI code page must work. */
+static void test_unicode_path(void)
+{
+    const wchar_t *path = L"test_config_Тест_中文.tmp";
+    Config cfg;
+    char err[256];
+
+    /* A missing file with such a name is not an error either. */
+    CHECK(config_load_w(path, &cfg, err, sizeof err));
+    CHECK(cfg.size == 12);
+
+    FILE *f = _wfopen(path, L"wb");
+    CHECK(f != NULL);
+    if (!f) return;
+    fputs("[crosshair]\nsize = 11\n", f);
+    fclose(f);
+
+    CHECK(config_load_w(path, &cfg, err, sizeof err));
+    CHECK(cfg.size == 11);
+    _wremove(path);
+}
+#endif
+
 int main(void)
 {
     test_defaults();
@@ -181,6 +258,11 @@ int main(void)
     test_invalid_outline_and_display();
     test_structure_errors();
     test_error_reports_line();
+    test_degenerate_input();
+    test_file_size_limit();
+#ifdef _WIN32
+    test_unicode_path();
+#endif
 
     if (failures) {
         printf("%d check(s) failed\n", failures);

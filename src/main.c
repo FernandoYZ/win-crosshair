@@ -1,32 +1,52 @@
 #include <stdio.h>
-#include <string.h>
+#include <wchar.h>
 #include <windows.h>
 
 #include "config.h"
 #include "overlay.h"
 
-static void show_message(const char *msg, UINT icon)
+#define CONFIG_NAME L"config.toml"
+
+static void show_message(const wchar_t *msg, UINT icon)
 {
-    MessageBox(NULL, msg, "crosshair", MB_OK | icon);
+    MessageBoxW(NULL, msg, L"crosshair", MB_OK | icon);
 }
 
 /* config.toml is looked up next to crosshair.exe, not in the working
- * directory, so the program stays portable. */
-static BOOL config_path(char *out, size_t size)
+ * directory, so the program stays portable. Paths are UTF-16 end to end:
+ * a folder name outside the ANSI code page would not survive a narrow path. */
+static BOOL config_path(wchar_t *out, size_t count)
 {
-    char exe[MAX_PATH];
-    DWORD len = GetModuleFileName(NULL, exe, MAX_PATH);
+    wchar_t exe[MAX_PATH];
+    DWORD len = GetModuleFileNameW(NULL, exe, MAX_PATH);
     if (len == 0 || len >= MAX_PATH) {
         return FALSE;
     }
 
-    char *slash = strrchr(exe, '\\');
+    wchar_t *slash = wcsrchr(exe, L'\\');
     if (slash == NULL) {
         return FALSE;
     }
+    slash[1] = L'\0';
 
-    int n = snprintf(out, size, "%.*sconfig.toml", (int)(slash - exe + 1), exe);
-    return n > 0 && (size_t)n < size;
+    if (wcslen(exe) + wcslen(CONFIG_NAME) >= count) {
+        return FALSE;
+    }
+    wcscpy(out, exe);
+    wcscat(out, CONFIG_NAME);
+    return TRUE;
+}
+
+static void show_config_error(const char *err, const wchar_t *path)
+{
+    wchar_t text[256] = L"";
+    wchar_t msg[256 + MAX_PATH + 16];
+
+    /* The parser reports UTF-8: it can echo back property names from the file. */
+    MultiByteToWideChar(CP_UTF8, 0, err, -1, text, (int)(sizeof text / sizeof text[0]));
+    _snwprintf(msg, sizeof msg / sizeof msg[0], L"%ls\n\nFile: %ls", text, path);
+    msg[sizeof msg / sizeof msg[0] - 1] = L'\0';
+    show_message(msg, MB_ICONERROR);
 }
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int show)
@@ -39,33 +59,34 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int show)
      * never scales our coordinates: sizes and positions are physical pixels. */
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
-    char path[MAX_PATH];
+    wchar_t path[MAX_PATH];
     char err[256];
-    char msg[MAX_PATH + 300];
     Config cfg;
 
-    if (!config_path(path, sizeof path)) {
-        show_message("Failed to locate config.toml.", MB_ICONERROR);
+    if (!config_path(path, sizeof path / sizeof path[0])) {
+        show_message(L"Failed to locate config.toml.", MB_ICONERROR);
         return 1;
     }
-    if (!config_load(path, &cfg, err, sizeof err)) {
-        snprintf(msg, sizeof msg, "%s\n\nFile: %s", err, path);
-        show_message(msg, MB_ICONERROR);
+    if (!config_load_w(path, &cfg, err, sizeof err)) {
+        show_config_error(err, path);
         return 1;
     }
 
     RECT monitor;
     if (!overlay_monitor_rect(cfg.monitor, &monitor)) {
-        snprintf(msg, sizeof msg, "Monitor %d not found. Using the primary monitor.", cfg.monitor);
+        wchar_t msg[96];
+        _snwprintf(msg, sizeof msg / sizeof msg[0],
+                   L"Monitor %d not found. Using the primary monitor.", cfg.monitor);
+        msg[sizeof msg / sizeof msg[0] - 1] = L'\0';
         show_message(msg, MB_ICONWARNING);
         if (!overlay_monitor_rect(0, &monitor)) {
-            show_message("Failed to find the primary monitor.", MB_ICONERROR);
+            show_message(L"Failed to find the primary monitor.", MB_ICONERROR);
             return 1;
         }
     }
 
     if (!overlay_create(instance, &cfg, &monitor)) {
-        show_message("Failed to create overlay window.", MB_ICONERROR);
+        show_message(L"Failed to create overlay window.", MB_ICONERROR);
         return 1;
     }
 
