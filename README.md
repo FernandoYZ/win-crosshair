@@ -2,8 +2,9 @@
 
 A minimal crosshair overlay for Windows, written in C with the Win32 API and GDI.
 
-**Status: v0.1.0 (technical prototype).** It draws a fixed green cross in the
-center of the primary monitor. Nothing is configurable yet; see `ROADMAP.md`.
+**Status: v0.2.0 (real overlay).** It draws a fixed green cross in the center of
+the primary monitor. The window is topmost, click-through, never takes focus and
+is hidden from Alt+Tab. Nothing is configurable yet; see `docs/ROADMAP.md`.
 
 ## Build
 
@@ -24,9 +25,10 @@ There is no window to close. Stop it with Task Manager or:
 taskkill /IM crosshair.exe
 ```
 
-## Known limitations in v0.1.0
+## Known limitations in v0.2.0
 
-- Not always-on-top, not click-through, may take focus (planned for v0.2.0).
+- Topmost is requested once at creation. Another topmost window (or a
+  fullscreen app) can still cover the crosshair.
 - Not DPI-aware; position may be off on scaled displays (planned for v0.4.0).
 - Primary monitor only.
 - Fullscreen exclusive games may not show the overlay. This is a limitation of

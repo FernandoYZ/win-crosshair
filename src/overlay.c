@@ -1,6 +1,6 @@
 #include "overlay.h"
 
-/* v0.1.0: every value is hardcoded. Configuration arrives in v0.3.0. */
+/* Every value is hardcoded until configuration arrives in v0.3.0. */
 #define CROSS_COLOR RGB(0, 255, 0)
 #define CROSS_SIZE 12
 #define CROSS_THICKNESS 2
@@ -8,6 +8,15 @@
 
 /* Pixels painted with this color become transparent (LWA_COLORKEY). */
 #define KEY_COLOR RGB(255, 0, 255)
+
+/* Extended styles that make this a real overlay:
+ *   LAYERED     per-pixel transparency (color key)
+ *   TRANSPARENT mouse input passes through to the window underneath
+ *   NOACTIVATE  never takes focus or becomes the active window
+ *   TOOLWINDOW  hidden from Alt+Tab and the taskbar
+ *   TOPMOST     stays above normal windows; set once, no SetWindowPos polling */
+#define OVERLAY_EX_STYLE \
+    (WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST)
 
 /* The window is only as big as the crosshair, not the whole screen. */
 #define HALF_EXTENT (CROSS_GAP + CROSS_SIZE)
@@ -75,7 +84,7 @@ BOOL overlay_create(HINSTANCE instance)
     int x = (GetSystemMetrics(SM_CXSCREEN) - WINDOW_SIDE) / 2;
     int y = (GetSystemMetrics(SM_CYSCREEN) - WINDOW_SIDE) / 2;
 
-    HWND hwnd = CreateWindowEx(WS_EX_LAYERED, CLASS_NAME, "crosshair", WS_POPUP,
+    HWND hwnd = CreateWindowEx(OVERLAY_EX_STYLE, CLASS_NAME, "crosshair", WS_POPUP,
                                x, y, WINDOW_SIDE, WINDOW_SIDE,
                                NULL, NULL, instance, NULL);
     if (hwnd == NULL) {
@@ -87,7 +96,7 @@ BOOL overlay_create(HINSTANCE instance)
         return FALSE;
     }
 
-    ShowWindow(hwnd, SW_SHOW);
+    ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     UpdateWindow(hwnd);
     return TRUE;
 }
