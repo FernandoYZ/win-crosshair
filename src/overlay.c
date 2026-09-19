@@ -84,6 +84,29 @@ static void paint(HWND hwnd)
     EndPaint(hwnd, &ps);
 }
 
+/* Top-left corner that centers the window on `monitor`. */
+static void centered_origin(const RECT *monitor, int *x, int *y)
+{
+    *x = monitor->left + ((monitor->right - monitor->left) - g_side) / 2;
+    *y = monitor->top + ((monitor->bottom - monitor->top) - g_side) / 2;
+}
+
+/* Runs when the desktop layout changes (resolution, monitor plugged in or
+ * removed): the old position is no longer the center. Event-driven, so the
+ * idle cost stays zero. */
+static void recenter(HWND hwnd)
+{
+    RECT monitor;
+    int x, y;
+
+    /* If the chosen monitor is gone, use the primary one. */
+    if (!overlay_monitor_rect(g_cfg.monitor, &monitor) && !overlay_monitor_rect(0, &monitor)) {
+        return;
+    }
+    centered_origin(&monitor, &x, &y);
+    SetWindowPos(hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
     switch (msg) {
@@ -92,6 +115,9 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
         return 0;
     case WM_ERASEBKGND:
         return 1; /* paint() covers the whole client area */
+    case WM_DISPLAYCHANGE:
+        recenter(hwnd);
+        return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -157,8 +183,8 @@ BOOL overlay_create(HINSTANCE instance, const Config *cfg, const RECT *monitor)
         return FALSE;
     }
 
-    int x = monitor->left + ((monitor->right - monitor->left) - g_side) / 2;
-    int y = monitor->top + ((monitor->bottom - monitor->top) - g_side) / 2;
+    int x, y;
+    centered_origin(monitor, &x, &y);
 
     HWND hwnd = CreateWindowEx(OVERLAY_EX_STYLE, CLASS_NAME, "crosshair", WS_POPUP,
                                x, y, g_side, g_side,
