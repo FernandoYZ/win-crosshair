@@ -2,13 +2,13 @@
 
 A minimal crosshair overlay for Windows, written in C with the Win32 API and GDI.
 
-**Status: v0.6.0 (optimization).** It draws a configurable cross, with an
-optional outline, in the center of the selected monitor. The window is topmost,
+**Status: v1.0.0 (stable).** It draws a configurable cross, with an optional
+outline, in the center of the selected monitor. The window is topmost,
 click-through, never takes focus, is hidden from Alt+Tab and is DPI-aware. It
 recenters itself when the desktop layout changes, works from folders with any
 characters in their name, and is self-contained: the C runtime is linked
 statically, so it needs no Visual C++ Redistributable. See `docs/ROADMAP.md` for
-what comes next.
+what may come next.
 
 ## Build
 
@@ -30,6 +30,30 @@ There is no window to close. Stop it with Task Manager or:
 ```powershell
 taskkill /IM crosshair.exe
 ```
+
+## Using it with games
+
+The crosshair is a regular window drawn over the desktop. It shows over a game
+whenever Windows composes that game together with the desktop, which is the case
+for **windowed** and **borderless** ("fullscreen windowed") display modes.
+
+It does **not** show over a game in **exclusive fullscreen**, where the game takes
+over the display. If the crosshair is missing in a game:
+
+1. Open the game's video settings and switch the display mode to windowed,
+   borderless or "fullscreen windowed".
+2. If the game has no such option, look for a borderless-window launch option in
+   its documentation or community guides.
+3. Set the game to the monitor's native resolution, so borderless looks the same
+   as fullscreen.
+
+There is no workaround from this project. The tools that draw over exclusive
+fullscreen do it by injecting code into the game, and this project deliberately
+never does: it does not read or modify game memory, inject DLLs or hook graphics
+APIs. Doing so can also get an account banned by the game's anti-cheat.
+
+Games and anti-cheat systems have different policies about external overlays. Check
+the rules of the game you play before using one.
 
 ## Configuration
 
@@ -118,7 +142,7 @@ What has actually been checked, so nothing here is a guess:
 | Resolution | 1920x1080 | 1280x720, 2560x1440, 3840x2160 |
 | DPI scaling | 125 % (window size and centering exact in physical pixels) | 100 %, 150 %, 175 %, 200 % |
 | Monitors | one monitor; a missing monitor falls back to the primary | two or three monitors |
-| Game window mode | Windowed / borderless (L4D2) shows the crosshair | - |
+| Game display mode | a game in windowed / borderless mode shows the crosshair | - |
 | Fullscreen exclusive | does not show it (documented limitation) | - |
 | Non-ANSI folder names | works (tested with a Cyrillic folder) | - |
 | Recentering | simulated by sending `WM_DISPLAYCHANGE` after moving the window | a real resolution change |
@@ -180,5 +204,7 @@ ctest --test-dir build -C Release --output-on-failure
   "windowed", "borderless" or "fullscreen windowed" in the game instead. The
   project never injects into or hooks games, so there is no workaround from here.
 - `cross` shape only.
+- Running `crosshair.exe` twice draws two crosshairs on top of each other. Stop the
+  extra one from Task Manager.
 - Selecting a monitor other than the primary has only been tested on a
   single-monitor machine (the fallback path).
