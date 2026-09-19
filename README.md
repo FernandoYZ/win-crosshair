@@ -2,11 +2,13 @@
 
 A minimal crosshair overlay for Windows, written in C with the Win32 API and GDI.
 
-**Status: v0.5.0 (robustness).** It draws a configurable cross, with an
+**Status: v0.6.0 (optimization).** It draws a configurable cross, with an
 optional outline, in the center of the selected monitor. The window is topmost,
 click-through, never takes focus, is hidden from Alt+Tab and is DPI-aware. It
-recenters itself when the desktop layout changes, and works from folders with any
-characters in their name. See `docs/ROADMAP.md` for what comes next.
+recenters itself when the desktop layout changes, works from folders with any
+characters in their name, and is self-contained: the C runtime is linked
+statically, so it needs no Visual C++ Redistributable. See `docs/ROADMAP.md` for
+what comes next.
 
 ## Build
 
@@ -121,6 +123,43 @@ What has actually been checked, so nothing here is a guess:
 | Non-ANSI folder names | works (tested with a Cyrillic folder) | - |
 | Recentering | simulated by sending `WM_DISPLAYCHANGE` after moving the window | a real resolution change |
 
+## Performance
+
+Measured with `scripts/measure.ps1` (median of 5 runs, 10 s idle window, default
+`config.toml`) on Windows 11, Intel Core i7-1165G7, 12 GB RAM, 1920x1080 at 125 %:
+
+| Metric | v0.5.0 | v0.6.0 |
+|---|---|---|
+| Executable size | 19,968 bytes | 171,520 bytes |
+| RAM, private working set | 740 KB | 80 KB |
+| RAM, committed | 1,112 KB | 1,108 KB |
+| CPU while idle (10 s) | 0 ms | 0 ms |
+| GPU | 0 % | 0 % |
+| Startup until the window is visible | 23 ms | 25 ms |
+| Runtime DLLs to install | `VCRUNTIME140.dll` | none |
+
+How to read it:
+
+- **RAM.** The private working set is what Task Manager shows as "Memory". It
+  dropped because, once the crosshair is drawn, the program asks Windows to take
+  its pages out of the working set. They stay cached and return on demand, so the
+  process stops counting as resident memory while it idles. The **committed**
+  memory did not change: the program does not need less memory, it just stops
+  holding it resident. Task Manager may show a slightly higher number than the
+  script, because the working set grows a little each time the crosshair repaints.
+- **Size.** It grew by about 150 KB because the C runtime is now inside the
+  executable. That is what removes the `VCRUNTIME140.dll` dependency. Compiler
+  flags such as `/O1` or link-time optimization changed nothing measurable.
+- **Startup** includes creating the process from PowerShell, and the first launch
+  of a new binary can be slower because of the antivirus scan. Read it as an upper
+  bound.
+
+To measure a build yourself:
+
+```powershell
+.\scripts\measure.ps1 -Exe build\Release\crosshair.exe
+```
+
 ## Tests
 
 The config parser is plain C and has its own tests:
@@ -141,7 +180,5 @@ ctest --test-dir build -C Release --output-on-failure
   "windowed", "borderless" or "fullscreen windowed" in the game instead. The
   project never injects into or hooks games, so there is no workaround from here.
 - `cross` shape only.
-- Depends on `VCRUNTIME140.dll` (dynamic MSVC runtime); it may fail to start on a
-  machine without the Microsoft Visual C++ Redistributable (x64).
 - Selecting a monitor other than the primary has only been tested on a
   single-monitor machine (the fallback path).
