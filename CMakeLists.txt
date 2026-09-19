@@ -1,8 +1,13 @@
 cmake_minimum_required(VERSION 3.15)
-project(crosshair VERSION 0.5.0 LANGUAGES C)
+project(crosshair VERSION 0.6.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+
+# Link the C runtime statically (MSVC): the exe then needs no VCRUNTIME140.dll,
+# so no Visual C++ Redistributable. Costs about 150 KB of file size and nothing
+# measurable in memory or CPU.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # WIN32 selects the Windows subsystem: no console window.
 add_executable(crosshair WIN32

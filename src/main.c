@@ -90,6 +90,12 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdline, int show)
         return 1;
     }
 
+    /* The crosshair is drawn and the process is about to sit idle. Ask Windows to
+     * take its pages out of the working set: they stay cached and come back on
+     * demand, so the process stops counting as resident memory while it waits.
+     * The committed memory does not change. */
+    SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
+
     MSG m;
     while (GetMessage(&m, NULL, 0, 0) > 0) {
         TranslateMessage(&m);
